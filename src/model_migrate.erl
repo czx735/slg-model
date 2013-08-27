@@ -103,7 +103,7 @@ grant(Int, W) ->
 
 %% 获取所有的migrate模块，并排序.
 all_migrates(Path) ->
-  AllFile = os:cmd("cd " ++ Path ++ " && ls *.erl"),
+  AllFile = os:cmd("cd " ++ Path ++ " && ls *.erl 2>/dev/null"),
   FileArray = string:tokens(AllFile, "\n"),
   lists:sort(fun(A, B) ->
                  {_, TimeA} = parse_module_file_name(A),

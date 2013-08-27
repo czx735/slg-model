@@ -25,6 +25,26 @@ ets_i(EtsTable, Id) ->
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 这两个函数从db中load数据到ets.
+get_idx(_Field, [], _N) ->
+  undefined;
+get_idx(Field, [H|T], N) ->
+  case Field == H of
+    true -> N;
+    false -> get_idx(Field, T, N+1)
+  end.
+
+get_idx(Field, L) ->
+  get_idx(Field, L, 2). %% Idx 从 2 开始。
+
+%% 将数据库里面存储的binary load 为 term。
+parse_raw_data(R, EtsTable) ->
+  L = model_record:m(EtsTable),
+  TermList = model_record:mt(EtsTable),
+  lists:foldl(
+    fun (Field, Rec) ->
+        Idx = get_idx(Field, L),
+        setelement(Idx, Rec, model:load(element(Idx, Rec)))
+    end, R, TermList).
 
 %% MySQL对应的ets表全部为set类型，且key_pos为2.
 %% 如果数据不在ets中，加载单条数据到ets，如果在则不加载.
@@ -35,19 +55,20 @@ load_s(EtsTable, UsrId) ->
     [] -> {error, not_exist};
     [R]-> K = element(2, R),
           ets:insert(EtsTable, {single, {key, UsrId}, K, get_time()}),
-          ets:insert(EtsTable, R),
+          ets:insert(EtsTable, parse_raw_data(R, EtsTable)),
           {ok, R}
   end.
 -spec load_a(atom(), integer()) -> {ok, list()}.
 load_a(EtsTable, UsrId) ->
   Model = model:model(EtsTable),
   List = Model:select_n(UsrId),
-  KList = lists:foldl(fun(R, KL) ->
-                          ets:insert(EtsTable, R),
-                          K = element(2, R),
-                          ets:insert(EtsTable, R),
-                          [K|KL]
-                      end, [], List),
+  KList = lists:foldl(
+            fun(R, KL) ->
+                ets:insert(EtsTable, R),
+                K = element(2, R),
+                ets:insert(EtsTable, parse_raw_data(R, EtsTable)),
+                [K|KL]
+            end, [], List),
   ets:insert(EtsTable, {array, {key, UsrId}, KList, get_time()}),
   {ok, List}.
 

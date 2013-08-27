@@ -5,6 +5,11 @@
 -include_lib("eunit/include/eunit.hrl").
 %%-include("deps/mysql/include/mysql.hrl").
 
+dump(Term) -> base64:encode_to_string(term_to_binary(Term)).
+
+load(Raw) -> binary_to_term(base64:decode(Raw)).
+  
+
 format(Pid, _) when is_pid(Pid) -> ok;
 format("fetch ~p (id ~p)", [D|_]) ->
   io:format("SQL~s~n", [D]);
@@ -76,35 +81,59 @@ select_n(Record, Table, Column, Cond, Limit) ->
   SQL = model_sql:select(Table, Column, Cond, Limit),
   model_exec:select_n(Record, SQL).
 
+f() ->
+  ok.
 
-kv_list([K], [V]) ->  [{K, V}];
-kv_list([K|Kl], [V|Vl]) -> [{K, V}] ++ kv_list(Kl, Vl).
+
+kv_list([K], [V], L) ->
+  case lists:member(K, L) of
+    true -> [{K, dump(V)}];
+    false -> [{K, V}]
+  end;
+
+kv_list([K|Kl], [V|Vl], L) ->
+  case lists:member(K, L) of
+    true -> [{K, dump(V)}] ++ kv_list(Kl, Vl, L);
+    false -> [{K, V}] ++ kv_list(Kl, Vl, L)
+  end.
+
+
+kv_list(OrigList, TermList) ->
+  lists:map(fun ({K, V}) ->
+                case lists:member(K, TermList) of
+                  true -> {K, dump(V)};
+                  false -> {K, V}
+                end
+            end, OrigList).
 
 %% Data为Record的实例.
-update_t([_Id|Keys], Table, Data) ->
+update_t([_Id|Keys], Table, Data, TermList) ->
   [_Name, Id | Values] = tuple_to_list(Data),
   true = (length(Keys) == length(Values)),
-  Kv = kv_list(Keys, Values),
+  Kv = kv_list(Keys, Values, TermList),
   SQL = model_sql:update(Table, Kv, [{id, Id}]),
   model_exec:update_t(SQL),
   ok;
 %% 简单列表修改.
-update_t(Id, Table, List) ->
-  SQL = model_sql:update(Table, List, [{id, Id}]),
+update_t(Id, Table, List, TermList) ->
+  NewList = kv_list(List, TermList),
+  SQL = model_sql:update(Table, NewList, [{id, Id}]),
   model_exec:update_t(SQL),
   ok.
 
 %% Data为Record的实例.
-update_n([_Id|Keys], Table, Data) ->
+update_n([_Id|Keys], Table, Data, TermList) ->
   [_Name, Id | Values] = tuple_to_list(Data),
   true = (length(Keys) == length(Values)),
-  Kv = kv_list(Keys, Values),
+  Kv = kv_list(Keys, Values, TermList),
   SQL = model_sql:update(Table, Kv, [{id, Id}]),
   model_exec:update_n(SQL),
   ok;
+
 %% 简单列表修改.
-update_n(Id, Table, List) ->
-  SQL = model_sql:update(Table, List, [{id, Id}]),
+update_n(Id, Table, List, TermList) ->
+  NewList = kv_list(List, TermList),
+  SQL = model_sql:update(Table, NewList, [{id, Id}]),
   model_exec:update_n(SQL),
   ok.
 
@@ -114,10 +143,10 @@ insert_n(Kv, Table) ->
   model_exec:insert_n(SQL).
 
 %% 参数为记录
-insert_n(Keys, Table, Data) when is_list(Keys) ->
+insert_n(Keys, Table, Data, TermList) when is_list(Keys) ->
   [_Name|Values] = tuple_to_list(Data),
   true = (length(Keys) == length(Values)),
-  Kv = kv_list(Keys, Values),
+  Kv = kv_list(Keys, Values, TermList),
   SQL = model_sql:insert(Table, Kv),
   model_exec:insert_n(SQL).
 
@@ -128,10 +157,10 @@ insert_t(Kv, Table) ->
   model_exec:insert_t(SQL).
 
 %% 参数为记录
-insert_t(Keys, Table, Data) when is_list(Keys) ->
+insert_t(Keys, Table, Data, TermList) when is_list(Keys) ->
   [_Name|Values] = tuple_to_list(Data),
   true = (length(Keys) == length(Values)),
-  Kv = kv_list(Keys, Values),
+  Kv = kv_list(Keys, Values, TermList),
   SQL = model_sql:insert(Table, Kv),
   model_exec:insert_t(SQL).
 
@@ -180,9 +209,7 @@ count(Cond, Table) ->
   Count.
 
 pos_attr(Attrs, List) ->
-%%  io:format("~p ~p", [Attrs, List]),
   lists:map(fun({Pos, V}) ->
-                %%io:format("pos ~p attr ~p~n", [Pos, Attrs]),
                 N = lists:nth(Pos-1, Attrs),
                 {N, V}
             end, List).
@@ -196,32 +223,30 @@ module_new(Key) ->
   DbAtom = record_atom(Key),
   M0 = spt_smerl:new(ModuleAtom),
   Table = Key,
-
-  SelectFun01 = io_lib:format("
-     select_n(Cond, Limit) ->
-     model:select_n(~p, ~p, all, Cond, Limit).",
-                              [DbAtom, Table]),
+  
+  SelectFun01 = io_lib:format("select_n(Cond, Limit) ->
+     model:select_n(~p, ~p, all, Cond, Limit).", [DbAtom, Table]),
   SelectFun0 = lists:flatten(SelectFun01),
   %% 普通查询函数.
-  SelectFun1 = io_lib:format("
-     select_n(Cond) when is_list(Cond) ->
+  SelectFun1 = io_lib:format("select_n(Cond) when is_list(Cond) ->
      model:select_n(~p, ~p, all, Cond);
      select_n(UserId) when is_integer(UserId) ->
      model:select_n(~p, ~p, all, [{user_id, UserId}]).",
                              [DbAtom, Table, DbAtom, Table]),
   SelectFun = lists:flatten(SelectFun1),
   UpdateFun1 = io_lib:format("update_n({Id, List}) ->
-             List1 = model:pos_attr(model_record:m(~p), List),
-             model:update_n(Id, ~p, List1);
-            update_n(Db) ->
-     model:update_n(model_record:m(~p), ~p, Db).", [Key, Table, Key, Table]),
+     List1 = model:pos_attr(model_record:m(~p), List),
+     model:update_n(Id, ~p, List1, model_record:mt(~p));
+     update_n(Db) ->
+     model:update_n(model_record:m(~p), ~p, Db).",
+                             [Key, Table, Key, Table, Key]),
   UpdateFun = lists:flatten(UpdateFun1),
   InsertFun1 = io_lib:format("insert_n(Db) ->
-     model:insert_n(model_record:m(~p), ~p, Db).", [Key, Table]),
+    model:insert_n(model_record:m(~p), ~p, Db, model_record:mt(~p)).",
+                             [Key, Table, Key]),
   InsertFun = lists:flatten(InsertFun1),
   DeleteFun1 = io_lib:format("delete_n(ID)  ->
-     model:delete_n(ID, ~p).
-   ", [Table]),
+    model:delete_n(ID, ~p).", [Table]),
   DeleteFun = lists:flatten(DeleteFun1),
   {ok, M1} = spt_smerl:add_func(M0, SelectFun0),
   {ok, M2} = spt_smerl:add_func(M1, SelectFun),
@@ -229,8 +254,7 @@ module_new(Key) ->
   {ok, M4} = spt_smerl:add_func(M3, InsertFun),
   {ok, M5} = spt_smerl:add_func(M4, DeleteFun),
   SelectFunt01 = io_lib:format("select_t(Cond, Limit) ->
-  model:select_t(~p, ~p, all, Cond, Limit).
-  ", [DbAtom, Table]),
+     model:select_t(~p, ~p, all, Cond, Limit).", [DbAtom, Table]),
   SelectFunt0 = lists:flatten(SelectFunt01),
   %% 事务查询函数
   SelectFunt1 = io_lib:format("select_t(Cond) when is_list(Cond) ->
@@ -242,11 +266,12 @@ module_new(Key) ->
   UpdateFunt1 = io_lib:format("update_t({Id, List}) ->
      List1 = model:pos_attr(model_record:m(~p), List),
      model:update_t(Id, ~p, List1);
-    update_t(Db) ->
+     update_t(Db) ->
      model:update_t(model_record:m(~p), ~p, Db).", [Key, Table, Key, Table]),
   UpdateFunt = lists:flatten(UpdateFunt1),
   InsertFunt1 = io_lib:format("insert_t(Db) ->
-     model:insert_t(model_record:m(~p), ~p, Db).", [Key, Table]),
+     model:insert_t(model_record:m(~p), ~p, Db, model_record:mt(~p)).",
+                              [Key, Table, Key]),
   InsertFunt = lists:flatten(InsertFunt1),
   DeleteFunt1 = io_lib:format("delete_t(ID) ->
      model:delete_t(ID, ~p).", [Table]),
@@ -280,15 +305,19 @@ safe_create(AtomName, Options) ->
   end.
 
 init_m() ->
-  safe_create(slg_model_map, [named_table, public, set, {keypos, 1}]).
+  safe_create(slg_model_map, [named_table, public, set, {keypos, 1}, set]).
 
 %% Key为复数.
 add_m(Key, KeyList, Db) ->
-  add_m(Key, KeyList, Db, []).
+  add_m(Key, KeyList, Db, [], []).
 
 %% 新的add_m函数，可以对表格进行详细配置.
 add_m(Key, KeyList, Db, Opts) ->
-  ets:insert(slg_model_map, {Key, KeyList, Db, Opts}).
+  ets:insert(slg_model_map, {Key, KeyList, Db, Opts, []}).
+
+%% TermList 里表示该field是erlang term，在存储读取时候需要转换。
+add_m(Key, KeyList, Db, Opts, TermList) ->
+  ets:insert(slg_model_map, {Key, KeyList, Db, Opts, TermList}).
 
 sid_g() ->
   case catch model_config:sid() of
@@ -298,6 +327,7 @@ sid_g() ->
 
 sid_s(Dbc, Opts) ->
   SID = spt_atom:opt(s_id, Opts, 1),
+  io:format("SID init: ~p.~n", [SID]),
   Worker = spt_atom:opt(worker, Opts, 31),
   M1 = spt_smerl:new(model_config),
   {ok, M2} = spt_smerl:add_func(M1, "sid() -> " ++ integer_to_list(SID) ++ "."),
@@ -311,14 +341,23 @@ sid_s(Dbc, Opts) ->
 gen_m() ->
   All = ets:tab2list(slg_model_map),
   M0 = spt_smerl:new(model_record),
-  DFun = fun({K, L, _Dbc, _Opts}, F_0) ->
+  DFun = fun({K, L, _Dbc, _Opts, _TermList}, F_0) ->
              F_0 ++ lists:flatten(io_lib:format("m(~p) -> ~p;", [K, L]))
          end,
   Fun = lists:foldl(DFun, "", All),
   Fun1 = Fun ++ "m(_) -> throw(map_error).",
+
+  DFun2 = fun({K, _L, _Dbc, _Opts, TermList}, F_0) ->
+              F_0 ++ lists:flatten(io_lib:format("mt(~p) -> ~p;", [K, TermList]))
+          end,
+  Fun2 = lists:foldl(DFun2, "", All),
+  Fun3 = Fun2 ++ "mt(_) -> throw(map_error).",
+
   {ok, M1} = spt_smerl:add_func(M0, Fun1),
-  M2 = spt_smerl:set_exports(M1, [{m, 1}]),
-  ok = spt_smerl:compile(M2),
+  {ok, M2} = spt_smerl:add_func(M1, Fun3),
+
+  M3 = spt_smerl:set_exports(M2, [{m, 1}, {mt, 1}]),
+  ok = spt_smerl:compile(M3),
   gen_p(),
   gen_h(),
   ok.
@@ -334,7 +373,7 @@ gen_p() ->
 %% 生成模块管理函数.
 gen_h() ->
   All = ets:tab2list(slg_model_map),
-  lists:foreach(fun({K, _, Db, Opts}) ->
+  lists:foreach(fun({K, _, Db, Opts, _}) ->
                     model:module_new(K),
                     {ok, _} = data_holder_super:start_holder(Db, K, Opts)
                 end,
