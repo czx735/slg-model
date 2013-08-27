@@ -43,7 +43,7 @@ parse_raw_data(R, EtsTable) ->
   lists:foldl(
     fun (Field, Rec) ->
         Idx = get_idx(Field, L),
-        setelement(Idx, Rec, spt_atom:binary_to_term(element(Idx, Rec)))
+        setelement(Idx, Rec, model:load(element(Idx, Rec)))
     end, R, TermList).
 
 %% MySQL对应的ets表全部为set类型，且key_pos为2.

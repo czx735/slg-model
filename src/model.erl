@@ -5,6 +5,11 @@
 -include_lib("eunit/include/eunit.hrl").
 %%-include("deps/mysql/include/mysql.hrl").
 
+dump(Term) -> base64:encode_to_string(term_to_binary(Term)).
+
+load(Raw) -> binary_to_term(base64:decode(Raw)).
+  
+
 format(Pid, _) when is_pid(Pid) -> ok;
 format("fetch ~p (id ~p)", [D|_]) ->
   io:format("SQL~s~n", [D]);
@@ -82,13 +87,13 @@ f() ->
 
 kv_list([K], [V], L) ->
   case lists:member(K, L) of
-    true -> [{K, spt_atom:term_to_string(V)}];
+    true -> [{K, dump(V)}];
     false -> [{K, V}]
   end;
 
 kv_list([K|Kl], [V|Vl], L) ->
   case lists:member(K, L) of
-    true -> [{K, spt_atom:term_to_string(V)}] ++ kv_list(Kl, Vl, L);
+    true -> [{K, dump(V)}] ++ kv_list(Kl, Vl, L);
     false -> [{K, V}] ++ kv_list(Kl, Vl, L)
   end.
 
@@ -96,7 +101,7 @@ kv_list([K|Kl], [V|Vl], L) ->
 kv_list(OrigList, TermList) ->
   lists:map(fun ({K, V}) ->
                 case lists:member(K, TermList) of
-                  true -> {K, spt_atom:term_to_string(V)};
+                  true -> {K, dump(V)};
                   false -> {K, V}
                 end
             end, OrigList).
