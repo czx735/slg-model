@@ -53,7 +53,7 @@ exec(Model, Event, Db, T) ->
   case R of
     ok -> ok;
     Error ->
-      error_logger:warning_msg("data_writer error"),
+      error_logger:warning_msg("data_writer error: ~p", [Error]),
       receive after T -> ok end,
       exec(Model, Event, Db, erlang:min(2*T, 10000))
   end.
