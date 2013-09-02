@@ -45,29 +45,37 @@ select_n(RecordName, SQL) ->
   lists:map(fun(R) -> R1=[RecordName | R], list_to_tuple(R1) end, Rows).
 
 update_t(SQL) ->
-  {updated, _Result} = exec_t(SQL),
-  ok.
+  case exec_t(SQL) of
+    {updated, _Result} -> ok;
+    R -> R
+  end.
+
 update_n(SQL) ->
-  {updated, _Result} = exec_n(SQL),
-  ok.
+  case exec_n(SQL) of
+    {updated, _Result} -> ok;
+    R -> R
+  end.
 
 delete_t(SQL) ->
-  {updated, _Result} = exec_t(SQL),
-  ok.
+  case exec_t(SQL) of
+    {updated, _Result} -> ok;
+    R -> R
+  end.
 
 delete_n(SQL) ->
-  R = exec_n(SQL),
-  {updated, _Result} = R,
-  ok.
+  case exec_n(SQL) of
+    {updated, _Result} -> ok;
+    R -> R
+  end.
 
 insert_t(SQL) ->
   case exec_t(SQL) of
     {updated, _Result} -> ok;
-    error -> error
+    R -> R
   end.
 
 insert_n(SQL) ->
   case exec_n(SQL) of
     {updated, _Result} -> ok;
-    error -> error
+    R -> R
   end.
