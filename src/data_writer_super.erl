@@ -25,6 +25,6 @@ stop() ->
 init([]) ->
   {ok,
    {_SupFlags = {simple_one_for_one, ?MAX_RESTART, ?MAX_TIME},
-    [{undefined, {data_writer, start_link, []}, temporary, 2000, worker, []}]
+    [{undefined, {data_writer, start_link, []}, permanent, infinity, worker, []}]
    }
   }.

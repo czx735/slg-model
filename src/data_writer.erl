@@ -44,7 +44,7 @@ terminate(_Reason, _State) ->
   ok.
 
 %% 如果有一个SQl执行失败，则继续执行直到成功.
-exec(Model, Event, Db, T) ->
+exec(Model, Event, Db, _T) ->
   R = case Event of
         add -> Model:insert_n(Db);
         upt -> Model:update_n(Db);
@@ -52,9 +52,8 @@ exec(Model, Event, Db, T) ->
       end,
   case R of
     ok -> ok;
-    Error ->
-      error_logger:warning_msg("data_writer error"),
-      receive after T -> ok end,
-      exec(Model, Event, Db, erlang:min(2*T, 10000))
+    _Error -> error_logger:warning_msg("data_writer error")
+      %% receive after T -> ok end,
+      %% exec(Model, Event, Db, erlang:min(2*T, 10000))
   end.
 
