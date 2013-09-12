@@ -90,13 +90,18 @@ ensure_a(EtsTable, UsrId) ->
 %% 通过key查找单条数据.
 lookup_s(Table, UsrId) ->
   ensure_s(Table, UsrId),
-  [{single, {key, UsrId}, Id, Time}] = ets:lookup(Table, {key, UsrId}),
-  [R] = ets:lookup(Table, Id),
-  case get_time() of
-    Time -> do_nothing;
-    T -> ets:update_element(Table, {key, UsrId}, {4, T})
-  end,
-  {ok, R}.
+  case ets:lookup(Table, {key, UsrId}) of
+    [{single, {key, UsrId}, Id, Time}] ->
+      [R] = ets:lookup(Table, Id),
+      case get_time() of
+        Time -> do_nothing;
+        T -> ets:update_element(Table, {key, UsrId}, {4, T})
+      end,
+      {ok, R};
+    [] -> {error, not_exist}
+  end.
+
+
 
 -spec lookup_s_e(atom(), integer(), integer()) -> {ok, term()} | {error, not_exist}.
 %% 按pos查找属性，必须要确认数据存在才能用.
